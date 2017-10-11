@@ -6,6 +6,7 @@ import time
 import datetime
 import serial
 import argparse
+import six
 
 def argsParser():
 
@@ -24,24 +25,24 @@ def argsParser():
 
     if args.filePath == None:
         args.filePath = '/tmp/some.file'
-        print 'File was not specified. Measurements are saved to /tmp/some.file'
+        print('File was not specified. Measurements are saved to /tmp/some.file')
     if args.serialPort == None:
         args.serialPort = '/dev/ttyUSB0'
-        print 'Serial Port was not specified. Default is set to /dev/ttyUSB0'
+        print('Serial Port was not specified. Default is set to /dev/ttyUSB0')
     if args.samples == None:
         args.samples = 10
-        print 'Number of samples/second is not given. Default set to 10 samples/second'
+        print('Number of samples/second is not given. Default set to 10 samples/second')
     if args.duration == None:
         args.duration = 10
-        print 'Duration of measurements is not specified. Default set to 10 second'
+        print('Duration of measurements is not specified. Default set to 10 second')
     if args.graphLabel == None:
         args.graphLabel = 'New Graph'
-        print 'Graph label is not specified. Default is set to New Graph'
+        print('Graph label is not specified. Default is set to New Graph')
 
     return args
 
 
-def serialRead(filePath='/tmp/some.file', port='/dev/ttyUSB0', readTime=10, samples=10):
+def query_primary_measurement(filePath='/tmp/some.file', port='/dev/ttyUSB0', readTime=10, samples=10):
     '''
     Read specified Serial port
     where Fluke 289 is connected
@@ -65,24 +66,28 @@ def serialRead(filePath='/tmp/some.file', port='/dev/ttyUSB0', readTime=10, samp
         # keep reading serial until specified time elapsed
         while (start_time + readTime) > time.time():
             try:
-                line_from_serial = ""
+                # Send command to multimeter
                 ser.write("QM\r")
+
+                # Read response from multimeter
+                line_from_serial = ""
                 line_from_serial += ser.read(32)
                 line_from_serial = line_from_serial[2:-1] # cut '0\n'
+                print(line_from_serial)
                 # print line_from_serial
                 line_splited = line_from_serial.split(',')
                 value_amperes = float(line_splited[0])
                 # print value_amperes
                 f.write(str(value_amperes) + ',' + str(datetime.datetime.now()) + '\n')
             except serial.SerialException:
-                print 'Error occured!\n'
+                print('Error occured!\n')
                 continue
             except ValueError:
-                print 'Lost value!'
+                print('Lost value!')
                 continue
     except OSError:
-        print 'ERROR: Multimeter is not connected!'
-        print 'Check /dev/ folder for ttyUSBx port and do sudo chmod 777 /dev/ttyUSBx'
+        print('ERROR: Multimeter is not connected!')
+        print('Check /dev/ folder for ttyUSBx port and do sudo chmod 777 /dev/ttyUSBx')
 
 
 def chargingRatePlot(filePath='/tmp/some.file', plotLabel = 'New Plot'):
@@ -99,7 +104,7 @@ def chargingRatePlot(filePath='/tmp/some.file', plotLabel = 'New Plot'):
         # check if file exists, throws exeption otherwise
         times, measurements = getMeasurements(filePath)
         average = sum(measurements) / len(measurements)
-        print('avg = ' + str(average))
+        print(('avg = ' + str(average)))
         # plotting related stuff
         pylab.figure(str(datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")), figsize=(22.0, 9.0))
         pylab.title(plotLabel)
@@ -116,7 +121,7 @@ def chargingRatePlot(filePath='/tmp/some.file', plotLabel = 'New Plot'):
         pylab.show()
 
     except IOError:
-        print "File does not exist! Check file in " + str(filePath)
+        print("File does not exist! Check file in " + str(filePath))
 
 def getMeasurements(filePath):
     '''
@@ -144,9 +149,8 @@ def getMeasurements(filePath):
 
 
 def main():
-
     args = argsParser()
-    serialRead(args.filePath, args.serialPort, args.duration, args.samples)
+    query_primary_measurement(args.filePath, args.serialPort, args.duration, args.samples)
     chargingRatePlot(args.filePath, args.graphLabel)
 
 if __name__ == "__main__":
