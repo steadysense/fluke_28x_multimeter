@@ -67,11 +67,11 @@ def query_primary_measurement(filePath='/tmp/some.file', port='/dev/ttyUSB0', re
         while (start_time + readTime) > time.time():
             try:
                 # Send command to multimeter
-                ser.write("QM\r")
+                ser.write(b"QM\r")
 
                 # Read response from multimeter
                 line_from_serial = ""
-                line_from_serial += ser.read(32)
+                line_from_serial += ser.read(32).decode("utf-8")
                 line_from_serial = line_from_serial[2:-1] # cut '0\n'
                 print(line_from_serial)
                 # print line_from_serial
