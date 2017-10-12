@@ -11,7 +11,9 @@ import pprint
 import collections
 import datetime
 from serial.tools import list_ports
+import sys
 
+USB_SERIAL_NUMBER = 'AL03L2UV'
 
 def argsParser():
 
@@ -47,7 +49,7 @@ def argsParser():
     return args
 
 
-def query_identification(filePath='/tmp/some.file', port='/dev/tty.usbserial-AL03L2UV', readTime=10, samples=10):
+def query_identification(filePath='/tmp/some.file', port='auto', readTime=10, samples=10):
     """
     Examples
     =======
@@ -89,37 +91,6 @@ def query_identification(filePath='/tmp/some.file', port='/dev/tty.usbserial-AL0
 
     pprint.pprint(dict_id)
 
-'''
-# doesn't work for fluke 287
-def query_set_function(filePath='/tmp/some.file', port='auto', readTime=10, samples=10):
-    if samples > 25: # can't handle more samles
-        samples = 25
-    elif samples < 1:
-        samples = 1
-    if readTime > 86400: # 24 hours restriction
-        readTime
-    elif readTime < 10:
-        readTime = 10
-
-    # find device port
-    if port == 'auto':
-        port = find_port()
-
-    ser = serial.Serial(port, 115200, timeout = 1.0/samples)
-    f = open(filePath, 'w')
-
-    start_time = time.time()
-
-    ser.write(b"SF 11 \r")
-
-    # Read response from multimeter
-    line_from_serial = ser.read_until(terminator=b"\n")
-    line_splitted = line_from_serial.decode("utf-8").strip('0\r').split(',')
-    print(line_splitted)
-
-'''
-
-
 def query_primary_measurement(filePath='/tmp/some.file', port='auto', readTime=10, samples=10):
     """
   Examples
@@ -149,10 +120,6 @@ def query_primary_measurement(filePath='/tmp/some.file', port='auto', readTime=1
         readTime
     elif readTime < 10:
         readTime = 10
-
-    # find device port
-    if port == 'auto':
-        port = find_port()
 
     try:
         ser = serial.Serial(port, 115200, timeout = 1.0/samples)
@@ -196,7 +163,6 @@ def query_primary_measurement(filePath='/tmp/some.file', port='auto', readTime=1
         print('ERROR: Multimeter is not connected!')
         print('Check /dev/ folder for ttyUSBx port and do sudo chmod 777 /dev/ttyUSBx')
 
-
 def query_display_data(filePath='/tmp/some.file', port='auto', readTime=10, samples=10):
     """
     Examples
@@ -228,17 +194,8 @@ def query_display_data(filePath='/tmp/some.file', port='auto', readTime=10, samp
     elif readTime < 10:
         readTime = 10
 
-    # find device port
-    if port == 'auto':
-        port = find_port()
-
     ser = serial.Serial(port, 115200, timeout = 1.0/samples)
     f = open(filePath, 'w')
-
-    start_time = time.time()
-
-    # keep reading serial until specified time elapsed
-    # while(start_time + readTime) > time.time():
 
     # keep reading serial until terminated manually
     while True:
@@ -249,20 +206,24 @@ def query_display_data(filePath='/tmp/some.file', port='auto', readTime=10, samp
         line_from_serial = ser.read_until(terminator=b"\n")
         line_splitted = line_from_serial.decode("utf-8").strip('0\r').split(',')
 
+        print(line_splitted)
         if "HOLD" in line_splitted:
-            line_splitted.pop(9)
-            hold = True
+             line_splitted.pop(line_splitted.index("HOLD"))
+             measurementMode = "HOLD"
+        elif "MIN_MAX_AVG" in line_splitted:
+             line_splitted.pop(line_splitted.index("MIN_MAX_AVG"))
+             measurementMode = "MIN_MAX_AVG"
         else:
-            hold = False
+            measurementMode = "NONE"
 
         keys_base = ['primaryFunction','secondaryFunction', 'autoRangeState', 'baseUnit', 'rangeNumber', 'unitMultiplier',
-                   'lightningBolt', 'minMaxStartTime', 'numberOfModes',  'measurementMode', 'numberOfReadings']
+                   'lightningBolt', 'minMaxStartTime', 'numberOfModes', 'numberOfReadings']
         keys_readingData = ['readingID', 'readingValue', 'baseUnitReading', 'unitMultiplierRecording', 'decimalPlaces',
                             'displayDigits', 'readingState', 'readingAttribute', 'timeStamp']
 
         # initialize base dictionary
         dict_base = collections.OrderedDict (zip(keys_base, line_splitted))
-        dict_base.update({'hold':hold})
+        dict_base['measurementMode'] = measurementMode
 
         dict_base['values'] = []
 
@@ -279,9 +240,6 @@ def query_display_data(filePath='/tmp/some.file', port='auto', readTime=10, samp
             dict_base['values'].append(dict_add)
 
         pprint.pprint(dict_base)
-
-
-
 
 def chargingRatePlot(filePath='/tmp/some.file', plotLabel = 'New Plot'):
     '''
@@ -316,7 +274,6 @@ def chargingRatePlot(filePath='/tmp/some.file', plotLabel = 'New Plot'):
     except IOError:
         print("File does not exist! Check file in " + str(filePath))
 
-
 def getMeasurements(filePath):
     '''
     Get measurements from file
@@ -341,32 +298,60 @@ def getMeasurements(filePath):
             counter += 1
     return (times, measurements)
 
+def find_device():
+    # check connected devices to find multimeter and return port
+    for port in list_ports.comports():
+        if port.serial_number == USB_SERIAL_NUMBER:
+            return port.device
+    return None
 
-def find_port():
+def get_output_lines_from_serial(filePath='/Users/vspath/work/steadysense/fluke_28x_multimeter/serialOutput.txt', port='auto', readTime=16):
+    """
+    Read output lines and store them into file when different commands are transmitted
 
-    usb_serial_number = 'AL03L2UV'
+    :param filePath:
+    :param port:
+    :param readTime:
+    :return:
+    """
 
-    for i in range(0, len(list_ports.comports())):
-        if list_ports.comports()[i].__dict__['serial_number'] == usb_serial_number:
-            serialPort = list_ports.comports()[i].__dict__['device']
+    ser = serial.Serial(port, 115200, timeout=2.0)
+    f = open(filePath, 'w')
 
-    for i in range(0, len(list_ports.comports()), 1):
-        if list_ports.comports()[i].__dict__['serial_number'] == 'AL03L2UV':
-            serialPort = list_ports.comports()[i].__dict__['device']
+    command = ['QM\r', 'QDDA\r']
 
-    return serialPort
+    for i in range(len(command)):
+        start_time = time.time()
+        f.write(command[i])
+        while (start_time + readTime) > time.time():
+            ser.write(command[i].encode())
+            # Read response from multimeter
+            line_from_serial = ser.read_until(terminator=b"\n")
+            print(line_from_serial)
+            f.write(str(line_from_serial) + '\n')
+        time.sleep(2)
 
 def main():
     #args = argsParser()
     #query_primary_measurement(args.filePath, args.serialPort, args.duration, args.samples)
 
-    query_identification()
-    #query_set_function()
-    #query_primary_measurement()
-    query_display_data()
+    # find device port
+    port = find_device()
+    if port is None:
+        print(f"Device with {USB_SERIAL_NUMBER} not found")
+        print("Available devices:")
+        for port in list_ports.comports():
+            print(port.device)
+        sys.exit(1)
 
+    query_identification(port=port)
+    #query_set_function(port=port)
+    #query_primary_measurement(port=port)
+    query_display_data(port=port)
+    #get_output_lines_from_serial(port=port)
 
     #chargingRatePlot(args.filePath, args.graphLabel)
 
 if __name__ == "__main__":
     main()
+
