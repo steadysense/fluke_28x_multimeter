@@ -1,0 +1,173 @@
+# -*- coding: utf-8 -*-
+
+"""Main module."""
+import collections
+import datetime
+import serial
+from serial.tools.list_ports import comports
+
+USB_SERIAL_NUMBER = 'AL03L2UV'
+
+
+def find_device():
+    """
+    check connected devices to find multimeter and return device
+    :return: /dev/tty.AL03L2UV or None
+    """
+    for port in comports():
+        if port.serial_number == USB_SERIAL_NUMBER:
+            return port.device
+    return None
+
+
+def connect(port: str) -> serial.Serial:
+    return serial.Serial(port, 115200, timeout=2.0)
+
+
+def disconnect(ser: serial.Serial):
+    ser.close()
+
+
+def query_identification(ser: serial.Serial):
+    """
+    Examples
+    =======
+
+    Multimeter connected via serial port
+    >> ID
+    << b'0\rFLUKE 287,V1.16,39120112\r'
+
+    :param ser: serial.Serial
+    :return:
+    """
+    # Send command to multimeter
+    ser.write(b"ID\r")
+    answer = ser.read_until(terminator=b"\r").strip()
+    if(answer != b"0"):
+        raise Exception("Invalid Answer: {}".format(answer))
+
+    # Read response from multimeter
+    line_from_serial = ser.read_until(terminator=b"\n")
+    line_splitted = line_from_serial.decode("utf-8").strip('\r').split(',')
+
+    keys_id = ['deviceName', 'softwareVersion', 'serial']
+    data = collections.OrderedDict(zip(keys_id, line_splitted))
+    data['serial'] = int(data['serial'])
+    return data
+
+
+def query_display_data(ser: serial.Serial):
+    """
+        Examples
+    =======
+
+    Multimeter set to VDC, AutoRange, MinMax
+    >> QDDA
+    << b'0\rV_DC,NONE,AUTO,VDC,5,0,OFF,1507700706.371,1,MIN_MAX_AVG,5,LIVE,0.6984,VDC,0,4,5,NORMAL,NONE,1507703969.077,
+        PRIMARY,0.6984,VDC,0,4,5,NORMAL,NONE,1507703969.077,MINIMUM,0.6979,VDC,0,4,5,NORMAL,NONE,1507700706.371,MAXIMUM,
+        0.6984,VDC,0,4,5,NORMAL,NONE,1507703759.355,AVERAGE,0.6982,VDC,0,4,5,NORMAL,NONE,1507703969.077\r'
+
+    :param ser: 
+    :return: 
+    """
+
+    # Send command to multimeter
+    ser.write(b"QDDA\r")
+
+    answer = ser.read_until(terminator=b"\r").strip()
+    if answer != b"0":
+        raise Exception("Invalid Answer: {}".format(answer))
+
+    # Read response from multimeter
+    line_from_serial = ser.read_until(terminator=b"\n")
+    line_splitted = line_from_serial.decode("utf-8").strip('\r').split(',')
+    if "HOLD" in line_splitted:
+         line_splitted.pop(line_splitted.index("HOLD"))
+         measurement_mode = "HOLD"
+    elif "MIN_MAX_AVG" in line_splitted:
+         line_splitted.pop(line_splitted.index("MIN_MAX_AVG"))
+         measurement_mode = "MIN_MAX_AVG"
+    else:
+        measurement_mode = "NONE"
+
+    keys_base = ['primaryFunction', 'secondaryFunction', 'autoRangeState', 'baseUnit', 'rangeNumber', 'unitMultiplier',
+                 'lightningBolt', 'minMaxStartTime', 'numberOfModes', 'numberOfReadings']
+    keys_data = ['readingID', 'readingValue', 'baseUnitReading', 'unitMultiplierRecording', 'decimalPlaces',
+                        'displayDigits', 'readingState', 'readingAttribute', 'timeStamp']
+
+    # initialize base dictionary
+    data = collections.OrderedDict(zip(keys_base, line_splitted))
+    data['measurementMode'] = measurement_mode
+    data['values'] = []
+
+    # adding recording data blocks containing the value to the base dictionary
+    for x in range(len(keys_base), len(line_splitted), len(keys_data)):
+        value = collections.OrderedDict(zip(keys_data, line_splitted[x: x + len(keys_data)]))
+
+        # dict_add['readingValue'] = float(dict_add['readingValue'])
+        value['unitMultiplierRecording'] = int(value['unitMultiplierRecording'])
+        value['decimalPlaces'] = int(value['decimalPlaces'])
+        value['displayDigits'] = int(value['displayDigits'])
+        value['timeStamp'] = datetime.datetime.utcfromtimestamp(float(value['timeStamp']))
+        value['timeStamp'] = str(value['timeStamp'])  # TODO: use msgpack hook to format datetimes
+        value['timeStampComp'] = datetime.datetime.now()
+        value['timeStampComp'] = str(value['timeStampComp'])  # TODO: use msgpack hook to format datetimes
+        data['values'].append(value)
+
+    return data
+
+
+def query_primary_measurement(ser: serial.Serial):
+    """
+      Examples
+    =======
+
+    Multimeter set to VDC, Power supply set to 0.7V
+    >> QM
+    << 0.7E0,VDC,NORMAL,NONE
+
+    :param ser: 
+    :return: 
+    """
+    # Send command to multimeter
+    ser.write(b"QM\r")
+
+    answer = ser.read_until(terminator=b"\r").strip()
+    if answer != b"0":
+        raise Exception("Invalid Answer: {}".format(answer))
+
+    # Read response from multimeter
+    line_from_serial = ser.read_until(terminator=b"\n")
+    line_splitted = line_from_serial.decode("utf-8").strip('\r').split(',')
+
+    keys_base = ['value', 'unit', 'state', 'attribute']
+
+    dict_base = collections.OrderedDict(zip(keys_base, line_splitted))
+    dict_base['value'] = float(dict_base['value'])
+    dict_base['timeStampComp'] = datetime.datetime.now()
+    dict_base['timeStampComp'] = str(dict_base['timeStampComp'])  # TODO: use msgpack hook to format datetimes
+
+    return dict_base
+
+
+class Fluke287(object):
+    """
+    Base object for communication with Fluke287 Multimeter
+    """
+    def __init__(self, ser: serial.Serial):
+        self.ser = ser or serial.Serial()
+        self.query_count = 0
+
+    def query_identification(self):
+        self.query_count += 1
+        return query_identification(self.ser)
+
+    def query_display_data(self):
+        self.query_count += 1
+        return query_display_data(self.ser)
+
+    def query_primary_measurement(self):
+        self.query_count += 1
+        return query_primary_measurement(self.ser)
+
+
