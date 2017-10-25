@@ -4,15 +4,14 @@
 
 import sys
 import click
-import zerorpc
 import time
 from fluke_28x_multimeter import *
 
 
 @click.group()
 @click.option("-v", "--verbose", type=click.BOOL, is_flag=True, help="print more output")
-@click.pass_context
-def main(ctx, verbose):
+@click.pass_obj
+def main(serial, verbose):
     """Console script for fluke_28x_multimeter."""
     if verbose:
         click.echo("Fluke 287")
@@ -23,71 +22,71 @@ def main(ctx, verbose):
             click.echo(f"Device with {USB_SERIAL_NUMBER} not found")
             click.echo("Available devices:")
             for port in comports():
-                click.echo("  * " + port.device)
+                click.echo(f"  * {port.device} - SN:{port.serial_number}")
             sys.exit(1)
 
     if verbose:
         click.echo(f"Connecting to {port}")
 
-    ser = connect(port)
-    if not ser.is_open:
-        click.echo("Could not open {port}, exiting")
+    serial = connect(port)
+    if not serial.is_open:
+        click.echo(f"Could not open {port}, exiting")
         sys.exit(1)
 
-    ctx.obj = Fluke287(ser)
 
 
 @main.command()
 @click.option("-f", "--fmt", type=click.STRING, default="csv", help="output format")
-@click.pass_context
-def display(ctx, fmt):
+@click.pass_obj
+def display(serial, fmt):
     """
     Displays all values shown on the multimeters screen
-    :param ctx: 
+    :param serial: 
     :param fmt:
     :return: 
     """
-    data = ctx.obj.query_display_data()
-    if fmt == "csv":
-        if ctx.obj.query_count == 1:
-            click.echo(",".join(data.keys()))
-        click.echo(",".join([str(val) for val in data.values()]))
+    for n, data in enumerate(loop(serial, query_display_data, ())):
+        if fmt == "csv":
+            if n == 1:
+                click.echo(",".join(data.keys()))
+            click.echo(",".join([str(val) for val in data.values()]))
 
     return data
 
 
 @main.command()
 @click.option("-f", "--fmt", type=click.STRING, default="csv", help="output format")
-@click.pass_context
-def primary(ctx, fmt):
+@click.option
+@click.pass_obj
+def primary(serial, fmt):
     """
     Displays primary measurement from Multimeter
-    :param ctx: 
+    :param serial: 
     :param fmt:
     :return: 
     """
-    data = ctx.obj.query_primary_measurement()
+    data = query_primary_measurement(serial)
     if fmt == "csv":
-        if ctx.obj.query_count == 1:
-            click.echo(",".join(data.keys()))
+        click.echo(",".join(data.keys()))
         click.echo(",".join([str(val) for val in data.values()]))
     return data
 
 
 @main.command()
 @click.option("-f", "--fmt", type=click.STRING, default="csv", help="output format")
-@click.pass_context
-def identify(ctx, fmt):
+@click.pass_obj
+def identify(serial, fmt):
     """
     Displays information about connected Device
-    :param ctx: 
+    :param serial: 
     :param fmt: 
     :return: 
     """
-    data = ctx.obj.query_identification()
+    data = query_identification(serial)
     if fmt == "csv":
         click.echo(",".join([str(val) for val in data.keys()]))
         click.echo(",".join([str(val) for val in data.values()]))
+
 
 @main.command()
 @click.option("--server", "serve_type", flag_value="bind", help="server mode")
@@ -102,34 +101,64 @@ def serve(ctx, serve_type, endpoint):
     :param endpoint: 
     :return: 
     """
-    if serve_type in ['bind', 'connect']:
-        server = zerorpc.Server(ctx.obj)
+    import zerorpc
+    import gevent
+    from gevent import monkey
+    monkey.patch_all()
 
-        if serve_type == "bind":
-            click.echo(f"Bind to {endpoint}")
-            server.bind(endpoint=endpoint)
+    server = zerorpc.Server(ctx.obj)
 
-        if serve_type == "connect":
-            click.echo(f"Connecting to {endpoint}")
-            server.connect(endpoint)
+    if serve_type == "bind":
+        click.echo(f"Bind to {endpoint}")
+        server.bind(endpoint=endpoint)
 
-        import gevent
-        from gevent import monkey
-        monkey.patch_all()
-        greenlets = [gevent.spawn(server.run), gevent.spawn(main_loop, ctx.obj)]
+    if serve_type == "connect":
+        click.echo(f"Connecting to {endpoint}")
+        server.connect(endpoint)
 
-        gevent.joinall(greenlets)
+    greenlets = [gevent.spawn(server.run), gevent.spawn(loop, ctx.obj)]
+    gevent.joinall(greenlets)
 
 
-def main_loop(fluke):
+def is_open(serial):
+    """ """
+    if serial.is_open:
+        return True
+    return False
+
+
+def serial_open():
+    """ """
+    port = find_device()
+    if port is not None:
+        serial = connect(port)
+        query_identification(serial)
+        click.echo(f"Established connection on port {port}")
+        return serial
+    else:
+        click.echo("Device not found. ")
+        return False
+
+
+def write_csv(data, head=True):
+    """ """
+    import csv
+    writer = csv.DictWriter(sys.stdout, data.keys())
+    if head is True:
+        writer.writeheader()
+
+    writer.writerow(data)
+
+
+def loop(serial, func, *args, **kwargs):
+    """ Main loop, used to reconnect the device, yields result of callable for each iteration """
     while True:
-        if not fluke.ser.is_open:
-            click.echo("Lost connection, retry. . .")
-            port = find_device()
-            if port is not None:
-                fluke.ser = connect(port)
-                click.echo(f"reestablished connection on port {port}")
-        time.sleep(1)
+        if not is_open(serial):
+            time.sleep(1)
+            continue
+
+        yield serial, func(serial, *args, **kwargs)
+
 
 if __name__ == "__main__":
     main()

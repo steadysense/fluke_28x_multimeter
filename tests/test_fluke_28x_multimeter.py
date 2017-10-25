@@ -32,17 +32,6 @@ class TestFluke28xMultimeter(TestCase):
         assert help_result.exit_code == 0
         assert 'Show this message and exit.' in help_result.output
 
-
-    """
-    def test_poll(self):
-        runner = CliRunner()
-        result = runner.invoke(cli.main, ['poll'])
-
-    def test_serve(self):
-        runner = CliRunner()
-        result = runner.invoke(cli.main, ['serve'])
-    """
-
     def test_find_port(self):
         device = find_device()
         assert find_device is not None, "Device not found"
@@ -60,7 +49,7 @@ class TestFluke28xMultimeter(TestCase):
         fluke = Fluke287(ser)
         d = fluke.query_display_data()
         assert len(d.keys()) > 0, "Got no data from query"
-        ser.close()
+        disconnect(ser)
 
     def test_primary(self):
         device = find_device()
@@ -69,12 +58,8 @@ class TestFluke28xMultimeter(TestCase):
         fluke = Fluke287(ser)
         d = fluke.query_display_data()
         assert len(d.keys()) > 0, "Got no data from query"
-        fluke.close()
+        disconnect(ser)
 
-    def test_server():
-        device = find_device()
-        ser = connect(device)
-
-        runner = CliRunner()
-        result = runner.invoke(cli.main, ['poll'])
+    def test_server(self):
+        pass
 

@@ -3,10 +3,16 @@
 """Main module."""
 import collections
 import datetime
+import time
 import serial
-from serial.tools.list_ports import comports
+
+__all__ = ['find_device', 'connect', 'disconnect', 'query_identification', 'query_display_data',
+           'query_primary_measurement', "USB_SERIAL_NUMBER"]
 
 USB_SERIAL_NUMBER = 'AL03L2UV'
+SERIAL_TIMEOUT = 1.0
+SERIAL_ENCODING = 'utf-8'
+SERIAL_BAUDRATE = 115200
 
 
 def find_device():
@@ -14,6 +20,8 @@ def find_device():
     check connected devices to find multimeter and return device
     :return: /dev/tty.AL03L2UV or None
     """
+    from serial.tools.list_ports import comports
+
     for port in comports():
         if port.serial_number == USB_SERIAL_NUMBER:
             return port.device
@@ -21,34 +29,72 @@ def find_device():
 
 
 def connect(port: str) -> serial.Serial:
-    return serial.Serial(port, 115200, timeout=2.0)
-
-
-def disconnect(ser: serial.Serial):
-    ser.close()
-
-
-def query_identification(ser: serial.Serial):
     """
-    Examples
-    =======
+    Opens a serial port and configures it.
+    :param port: 
+    :return: 
+    """
+    return serial.Serial(port, SERIAL_BAUDRATE, timeout=SERIAL_TIMEOUT)
 
-    Multimeter connected via serial port
-    >> ID
-    << b'0\rFLUKE 287,V1.16,39120112\r'
 
-    :param ser: serial.Serial
+def disconnect(io):
+    """
+    Closes port
+    :param io:
+    :return: 
+    """
+    io.close()
+
+
+def write(io, out):
+    """ """
+    io.write(out.encode(SERIAL_ENCODING))
+
+
+def read(io, n):
+    """ """
+    return io.read(n).decode(SERIAL_ENCODING)
+
+
+def read_until(io, terminator, timeout=SERIAL_TIMEOUT, size=None):
+    """
+    Read until a termination sequence is found ('\n' by default), the size
+    is exceeded or until timeout occurs.
+    """
+    lenterm = len(terminator)
+    buffer = []
+    start = time.monotonic()
+    while True:
+        c = read(io, 1)
+        if c:
+            buffer += c
+            if buffer[-lenterm:] == terminator:
+                break
+            if size is not None and len(buffer) >= size:
+                break
+        else:
+            break
+        if time.monotonic()-start > SERIAL_TIMEOUT:
+            raise TimeoutError(f"Timeout exceeded ({timeout}), recieved: {line}")
+    return "".join(buffer)
+
+
+def query_identification(io) -> dict:
+    """
+    Reads identification data from multimeter
+    :param io
     :return:
     """
     # Send command to multimeter
-    ser.write(b"ID\r")
-    answer = ser.read_until(terminator=b"\r").strip()
-    if(answer != b"0"):
-        raise Exception("Invalid Answer: {}".format(answer))
+    write(io, "ID\r")
+
+    answer = read_until(io, "\r").strip()
+    if answer != "0":
+        raise ValueError("Invalid Answer: {}".format(answer))
 
     # Read response from multimeter
-    line_from_serial = ser.read_until(terminator=b"\n")
-    line_splitted = line_from_serial.decode("utf-8").strip('\r').split(',')
+    line_from_serial = read_until(io, "\n")
+    line_splitted = line_from_serial.strip('\r').split(',')
 
     keys_id = ['deviceName', 'softwareVersion', 'serial']
     data = collections.OrderedDict(zip(keys_id, line_splitted))
@@ -56,37 +102,28 @@ def query_identification(ser: serial.Serial):
     return data
 
 
-def query_display_data(ser: serial.Serial):
+def query_display_data(io) -> dict:
     """
-        Examples
-    =======
-
-    Multimeter set to VDC, AutoRange, MinMax
-    >> QDDA
-    << b'0\rV_DC,NONE,AUTO,VDC,5,0,OFF,1507700706.371,1,MIN_MAX_AVG,5,LIVE,0.6984,VDC,0,4,5,NORMAL,NONE,1507703969.077,
-        PRIMARY,0.6984,VDC,0,4,5,NORMAL,NONE,1507703969.077,MINIMUM,0.6979,VDC,0,4,5,NORMAL,NONE,1507700706.371,MAXIMUM,
-        0.6984,VDC,0,4,5,NORMAL,NONE,1507703759.355,AVERAGE,0.6982,VDC,0,4,5,NORMAL,NONE,1507703969.077\r'
-
-    :param ser: 
+    Reads all data that is shown on screen. WARNING: data changes on configuration change. see docs for examples.
+    :param io: serial device, must be opened
     :return: 
     """
 
     # Send command to multimeter
-    ser.write(b"QDDA\r")
-
-    answer = ser.read_until(terminator=b"\r").strip()
-    if answer != b"0":
-        raise Exception("Invalid Answer: {}".format(answer))
+    write(io, "QDDA\r")
+    answer = read_until(io, "\r").strip()
+    if answer != "0":
+        raise ValueError("Invalid Answer: {}".format(answer))
 
     # Read response from multimeter
-    line_from_serial = ser.read_until(terminator=b"\n")
-    line_splitted = line_from_serial.decode("utf-8").strip('\r').split(',')
+    line_from_serial = read_until(io, "\n")
+    line_splitted = line_from_serial.strip('\r').split(',')
     if "HOLD" in line_splitted:
-         line_splitted.pop(line_splitted.index("HOLD"))
-         measurement_mode = "HOLD"
+        line_splitted.pop(line_splitted.index("HOLD"))
+        measurement_mode = "HOLD"
     elif "MIN_MAX_AVG" in line_splitted:
-         line_splitted.pop(line_splitted.index("MIN_MAX_AVG"))
-         measurement_mode = "MIN_MAX_AVG"
+        line_splitted.pop(line_splitted.index("MIN_MAX_AVG"))
+        measurement_mode = "MIN_MAX_AVG"
     else:
         measurement_mode = "NONE"
 
@@ -117,28 +154,22 @@ def query_display_data(ser: serial.Serial):
     return data
 
 
-def query_primary_measurement(ser: serial.Serial):
+def query_primary_measurement(io) -> dict:
     """
-      Examples
-    =======
-
-    Multimeter set to VDC, Power supply set to 0.7V
-    >> QM
-    << 0.7E0,VDC,NORMAL,NONE
-
-    :param ser: 
+    Reads primary measurement value, unit and mode
+    :param io: serial device, must be opened
     :return: 
     """
     # Send command to multimeter
-    ser.write(b"QM\r")
+    io.write("QM\r")
 
-    answer = ser.read_until(terminator=b"\r").strip()
-    if answer != b"0":
+    answer = read_until(io, "\r").strip()
+    if answer != "0":
         raise Exception("Invalid Answer: {}".format(answer))
 
     # Read response from multimeter
-    line_from_serial = ser.read_until(terminator=b"\n")
-    line_splitted = line_from_serial.decode("utf-8").strip('\r').split(',')
+    line_from_serial = read_until("\n")
+    line_splitted = line_from_serial.strip('\r').split(',')
 
     keys_base = ['value', 'unit', 'state', 'attribute']
 
@@ -154,20 +185,44 @@ class Fluke287(object):
     """
     Base object for communication with Fluke287 Multimeter
     """
-    def __init__(self, ser: serial.Serial):
-        self.ser = ser or serial.Serial()
-        self.query_count = 0
+
+    def __init__(self, io):
+        """
+        
+        :param io: Any object with read and write methods attached. 
+        """
+        self.io = io
 
     def query_identification(self):
-        self.query_count += 1
-        return query_identification(self.ser)
+        """ return identification dict """
+        return query_identification(self.io)
 
     def query_display_data(self):
-        self.query_count += 1
-        return query_display_data(self.ser)
+        """ returns all displayed data"""
+        return query_display_data(self.io)
 
     def query_primary_measurement(self):
-        self.query_count += 1
-        return query_primary_measurement(self.ser)
+        """ returns primary value, unit and mode """
+        return query_primary_measurement(self.io)
+
+
+class HwAdapter(object):
+
+    def __init__(self, io):
+        """
+
+        :param io: Any object with read and write methods attached. 
+        """
+        self.io = io
+
+    def read(self) -> str:
+        return read(self.io, 1)
+
+    def write(self, out: str):
+        return write(self.io, out)
+
+    def read_until(self, terminator: str, timeout=SERIAL_TIMEOUT, size=None) -> str:
+        return read_until(self, terminator, timeout, size)
+
 
 
