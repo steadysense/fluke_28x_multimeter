@@ -102,13 +102,15 @@ def query_display_data(ser: serial.Serial):
     data = []
 
     # adding recording data blocks containing the value to the base dictionary
+    timestamp = str(datetime.datetime.now())
+
     for x in range(len(keys_base), len(line_splitted), len(keys_data)):
         value = collections.OrderedDict(zip(keys_data, line_splitted[x: x + len(keys_data)]))
 
         value['timeStamp'] = datetime.datetime.utcfromtimestamp(float(value['timeStamp']))
         value['timeStamp'] = str(value['timeStamp'])  # TODO: use msgpack hook to format datetimes
 
-        data.append([value['readingID'], float(value['readingValue']), value['timeStamp'], value['baseUnitReading']])
+        data.append([value['readingID'], float(value['readingValue']), value['timeStamp'], value['baseUnitReading'], timestamp])
 
     return data
 
