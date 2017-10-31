@@ -166,7 +166,9 @@ class Fluke287(object):
 
     def query_display_data(self):
         self.query_count += 1
-        return query_display_data(self.ser)
+        m = query_display_data(self.ser)
+        self.db.a11_36.insert_one({str(datetime.datetime.now()).replace(".", "-"): m})
+        return m
 
     def query_primary_measurement(self):
         self.query_count += 1
