@@ -59,7 +59,7 @@ class TestFluke28xMultimeter(TestCase):
         assert ser.is_open is True, "Port could not be opened"
         fluke = Fluke287(ser)
         d = fluke.query_display_data()
-        assert len(d.keys()) > 0, "Got no data from query"
+        assert len(d) > 0, "Got no data from query"
         ser.close()
 
     def test_primary(self):
@@ -67,11 +67,11 @@ class TestFluke28xMultimeter(TestCase):
         ser = connect(device)
         assert ser.is_open is True, "Port could not be opened"
         fluke = Fluke287(ser)
-        d = fluke.query_display_data()
-        assert len(d.keys()) > 0, "Got no data from query"
-        fluke.close()
+        d = fluke.query_primary_measurement()
+        assert len(d) > 0, "Got no data from query"
+        ser.close()
 
-    def test_server():
+    def test_server(self):
         device = find_device()
         ser = connect(device)
 
