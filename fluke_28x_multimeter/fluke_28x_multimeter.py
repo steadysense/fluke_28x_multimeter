@@ -156,7 +156,7 @@ class Fluke287(object):
         self.ser = ser or serial.Serial()
         self.query_count = 0
 
-        self.mongo = MongoClient("localhost", 27010)
+        self.mongo = MongoClient("localhost", 27017)
         self.db = self.mongo.fluke_values
 
 
@@ -171,7 +171,7 @@ class Fluke287(object):
     def query_primary_measurement(self):
         self.query_count += 1
         m = query_primary_measurement(self.ser)
-        self.db.a11_36.insert_one({datetime.datetime.now():m})
+        self.db.a11_36.insert_one({str(datetime.datetime.now()).replace(".", "-"):m})
         return m
 
 
