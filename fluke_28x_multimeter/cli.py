@@ -43,9 +43,9 @@ def main(ctx, verbose):
 def display(ctx, fmt):
     """
     Displays all values shown on the multimeters screen
-    :param ctx: 
+    :param ctx:
     :param fmt:
-    :return: 
+    :return:
     """
     data = ctx.obj.query_display_data()
     if fmt == "csv":
@@ -62,9 +62,9 @@ def display(ctx, fmt):
 def primary(ctx, fmt):
     """
     Displays primary measurement from Multimeter
-    :param ctx: 
+    :param ctx:
     :param fmt:
-    :return: 
+    :return:
     """
     data = ctx.obj.query_primary_measurement()
     if fmt == "csv":
@@ -80,9 +80,9 @@ def primary(ctx, fmt):
 def identify(ctx, fmt):
     """
     Displays information about connected Device
-    :param ctx: 
-    :param fmt: 
-    :return: 
+    :param ctx:
+    :param fmt:
+    :return:
     """
     data = ctx.obj.query_identification()
     if fmt == "csv":
@@ -95,12 +95,13 @@ def identify(ctx, fmt):
 @click.option("-e", "--endpoint", type=click.STRING, default="tcp://0.0.0.0:20010", help="endpoint to use")
 @click.pass_context
 def serve(ctx, serve_type, endpoint):
+
     """
     Starts a server to expose Multimeter on network
-    :param ctx: 
-    :param serve_type: 
-    :param endpoint: 
-    :return: 
+    :param ctx:
+    :param serve_type:
+    :param endpoint:
+    :return:
     """
     if serve_type in ['bind', 'connect']:
         server = zerorpc.Server(ctx.obj)

@@ -4,6 +4,7 @@
 import collections
 import datetime
 import serial
+import pprint
 from serial.tools.list_ports import comports
 
 USB_SERIAL_NUMBER = 'AL03L2UV'
@@ -67,8 +68,8 @@ def query_display_data(ser: serial.Serial):
         PRIMARY,0.6984,VDC,0,4,5,NORMAL,NONE,1507703969.077,MINIMUM,0.6979,VDC,0,4,5,NORMAL,NONE,1507700706.371,MAXIMUM,
         0.6984,VDC,0,4,5,NORMAL,NONE,1507703759.355,AVERAGE,0.6982,VDC,0,4,5,NORMAL,NONE,1507703969.077\r'
 
-    :param ser: 
-    :return: 
+    :param ser:
+    :return:
     """
 
     # Send command to multimeter
@@ -96,23 +97,18 @@ def query_display_data(ser: serial.Serial):
                         'displayDigits', 'readingState', 'readingAttribute', 'timeStamp']
 
     # initialize base dictionary
-    data = collections.OrderedDict(zip(keys_base, line_splitted))
-    data['measurementMode'] = measurement_mode
-    data['values'] = []
+    #data_base = collections.OrderedDict(zip(keys_base, line_splitted))
+
+    data = []
 
     # adding recording data blocks containing the value to the base dictionary
     for x in range(len(keys_base), len(line_splitted), len(keys_data)):
         value = collections.OrderedDict(zip(keys_data, line_splitted[x: x + len(keys_data)]))
 
-        # dict_add['readingValue'] = float(dict_add['readingValue'])
-        value['unitMultiplierRecording'] = int(value['unitMultiplierRecording'])
-        value['decimalPlaces'] = int(value['decimalPlaces'])
-        value['displayDigits'] = int(value['displayDigits'])
         value['timeStamp'] = datetime.datetime.utcfromtimestamp(float(value['timeStamp']))
         value['timeStamp'] = str(value['timeStamp'])  # TODO: use msgpack hook to format datetimes
-        value['timeStampComp'] = datetime.datetime.now()
-        value['timeStampComp'] = str(value['timeStampComp'])  # TODO: use msgpack hook to format datetimes
-        data['values'].append(value)
+
+        data.append([value['readingID'], float(value['readingValue']), value['timeStamp'], value['baseUnitReading']])
 
     return data
 
@@ -126,8 +122,8 @@ def query_primary_measurement(ser: serial.Serial):
     >> QM
     << 0.7E0,VDC,NORMAL,NONE
 
-    :param ser: 
-    :return: 
+    :param ser:
+    :return:
     """
     # Send command to multimeter
     ser.write(b"QM\r")
@@ -143,11 +139,9 @@ def query_primary_measurement(ser: serial.Serial):
     keys_base = ['value', 'unit', 'state', 'attribute']
 
     dict_base = collections.OrderedDict(zip(keys_base, line_splitted))
-    dict_base['value'] = float(dict_base['value'])
-    dict_base['timeStampComp'] = datetime.datetime.now()
-    dict_base['timeStampComp'] = str(dict_base['timeStampComp'])  # TODO: use msgpack hook to format datetimes
+    data = [float(dict_base['value']), str(datetime.datetime.now())]
 
-    return dict_base
+    return data
 
 
 class Fluke287(object):
