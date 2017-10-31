@@ -2,6 +2,11 @@
 
 """Console script for fluke_28x_multimeter."""
 
+import gevent
+from gevent import monkey
+
+monkey.patch_all()
+
 import sys
 import click
 import zerorpc
@@ -114,9 +119,6 @@ def serve(ctx, serve_type, endpoint):
             click.echo(f"Connecting to {endpoint}")
             server.connect(endpoint)
 
-        import gevent
-        from gevent import monkey
-        monkey.patch_all()
         greenlets = [gevent.spawn(server.run), gevent.spawn(main_loop, ctx.obj)]
 
         gevent.joinall(greenlets)

@@ -5,6 +5,8 @@ import collections
 import datetime
 import serial
 import pprint
+from pymongo import MongoClient
+from bson.son import SON
 from serial.tools.list_ports import comports
 
 USB_SERIAL_NUMBER = 'AL03L2UV'
@@ -154,6 +156,10 @@ class Fluke287(object):
         self.ser = ser or serial.Serial()
         self.query_count = 0
 
+        self.mongo = MongoClient("localhost", 27010)
+        self.db = self.mongo.fluke_values
+
+
     def query_identification(self):
         self.query_count += 1
         return query_identification(self.ser)
@@ -164,6 +170,8 @@ class Fluke287(object):
 
     def query_primary_measurement(self):
         self.query_count += 1
-        return query_primary_measurement(self.ser)
+        m = query_primary_measurement(self.ser)
+        self.db.a11_36.insert_one({datetime.datetime.now():m})
+        return m
 
 
