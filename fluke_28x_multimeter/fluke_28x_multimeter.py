@@ -5,14 +5,24 @@ import collections
 import datetime
 import time
 import serial
+from enum import Enum
 
 __all__ = ['find_device', 'connect', 'disconnect', 'query_identification', 'query_display_data',
-           'query_primary_measurement', "USB_SERIAL_NUMBER"]
+           'query_primary_measurement', "USB_SERIAL_NUMBER", "Fluke287"]
 
 USB_SERIAL_NUMBER = 'AL03L2UV'
 SERIAL_TIMEOUT = 1.0
 SERIAL_ENCODING = 'utf-8'
 SERIAL_BAUDRATE = 115200
+LINE_END = b"\r"
+
+
+class Ack(Enum):
+    RESPONSE_OK = 0
+    ERROR_SYNTAX = 1
+    ERROR_EXECUTION = 2
+    NO_DATA = 5
+    NOT_SUPPORTED = 99
 
 
 def find_device():
@@ -48,35 +58,58 @@ def disconnect(io):
 
 def write(io, out):
     """ """
-    io.write(out.encode(SERIAL_ENCODING))
+    io.write(out)
 
 
 def read(io, n):
     """ """
-    return io.read(n).decode(SERIAL_ENCODING)
+    return io.read(n)
 
 
-def read_until(io, terminator, timeout=SERIAL_TIMEOUT, size=None):
+def send_command(io, command: bytes):
+    write(io, command + LINE_END)
+
+
+def recv_response(io, terminator=LINE_END, size=None):
     """
     Read until a termination sequence is found ('\n' by default), the size
     is exceeded or until timeout occurs.
     """
     lenterm = len(terminator)
-    buffer = []
+    buffer = bytearray()
     start = time.monotonic()
     while True:
         c = read(io, 1)
         if c:
             buffer += c
             if buffer[-lenterm:] == terminator:
-                break
+                return bytes(buffer[:-lenterm])
             if size is not None and len(buffer) >= size:
-                break
+                return bytes(buffer)
         else:
             break
-        if time.monotonic()-start > SERIAL_TIMEOUT:
+        if time.monotonic() - start > SERIAL_TIMEOUT:
             raise TimeoutError(f"Timeout exceeded ({timeout}), recieved: {line}")
-    return "".join(buffer)
+
+
+def execute_query(io, command: bytes):
+    send_command(io, command)
+    response = recv_response(io)
+    ack = parse_command_ack(response)
+    return ack
+
+
+def parse_command_ack(response: bytes):
+    if response == b"0":
+        return Ack.RESPONSE_OK
+    elif response == b"1":
+        return Ack.ERROR_SYNTAX
+    elif response == b"2":
+        return Ack.ERROR_EXECUTION
+    elif response == b"5":
+        return Ack.NO_DATA
+    else:
+        return Ack.NOT_SUPPORTED
 
 
 def query_identification(io) -> dict:
@@ -86,19 +119,19 @@ def query_identification(io) -> dict:
     :return:
     """
     # Send command to multimeter
-    write(io, "ID\r")
-
-    answer = read_until(io, "\r").strip()
-    if answer != "0":
-        raise ValueError("Invalid Answer: {}".format(answer))
+    execute_query(io, b"ID")
 
     # Read response from multimeter
-    line_from_serial = read_until(io, "\n")
-    line_splitted = line_from_serial.strip('\r').split(',')
+    line_from_serial = recv_response(io)
+    line_splitted = line_from_serial.decode("utf-8").split(',')
 
-    keys_id = ['deviceName', 'softwareVersion', 'serial']
-    data = collections.OrderedDict(zip(keys_id, line_splitted))
-    data['serial'] = int(data['serial'])
+    keys_id = [
+        ('deviceName', str),
+        ('softwareVersion', str),
+        ('serialNumber', str)
+    ]
+    data = {name: converter(value) for (value, (name, converter)) in zip(line_splitted, keys_id)}
+
     return data
 
 
@@ -110,14 +143,11 @@ def query_display_data(io) -> dict:
     """
 
     # Send command to multimeter
-    write(io, "QDDA\r")
-    answer = read_until(io, "\r").strip()
-    if answer != "0":
-        raise ValueError("Invalid Answer: {}".format(answer))
+    execute_query(io, b"QDDA")
 
     # Read response from multimeter
-    line_from_serial = read_until(io, "\n")
-    line_splitted = line_from_serial.strip('\r').split(',')
+    line_from_serial = recv_response(io)
+    line_splitted = line_from_serial.split(b',')
     if "HOLD" in line_splitted:
         line_splitted.pop(line_splitted.index("HOLD"))
         measurement_mode = "HOLD"
@@ -130,7 +160,7 @@ def query_display_data(io) -> dict:
     keys_base = ['primaryFunction', 'secondaryFunction', 'autoRangeState', 'baseUnit', 'rangeNumber', 'unitMultiplier',
                  'lightningBolt', 'minMaxStartTime', 'numberOfModes', 'numberOfReadings']
     keys_data = ['readingID', 'readingValue', 'baseUnitReading', 'unitMultiplierRecording', 'decimalPlaces',
-                        'displayDigits', 'readingState', 'readingAttribute', 'timeStamp']
+                 'displayDigits', 'readingState', 'readingAttribute', 'timeStamp']
 
     # initialize base dictionary
     data = collections.OrderedDict(zip(keys_base, line_splitted))
@@ -161,24 +191,62 @@ def query_primary_measurement(io) -> dict:
     :return: 
     """
     # Send command to multimeter
-    io.write("QM\r")
-
-    answer = read_until(io, "\r").strip()
-    if answer != "0":
-        raise Exception("Invalid Answer: {}".format(answer))
+    send_command(io, b"QM")
 
     # Read response from multimeter
-    line_from_serial = read_until("\n")
-    line_splitted = line_from_serial.strip('\r').split(',')
+    line_from_serial = recv_response(io)
+    line_splitted = line_from_serial.split(b',')
 
     keys_base = ['value', 'unit', 'state', 'attribute']
 
     dict_base = collections.OrderedDict(zip(keys_base, line_splitted))
     dict_base['value'] = float(dict_base['value'])
-    dict_base['timeStampComp'] = datetime.datetime.now()
-    dict_base['timeStampComp'] = str(dict_base['timeStampComp'])  # TODO: use msgpack hook to format datetimes
+    dict_base['timeStampComp'] = datetime.datetime.utcnow()
 
     return dict_base
+
+
+class SerialPortState(Enum):
+    DISCONNECTED = 0
+    CONNECTED = 1
+
+
+class InstrumentBase(object):
+    def __init__(self, io=None, serial_port=None):
+        """
+        :param io: Any object with read and write methods attached. 
+        """
+        self._state = SerialPortState.DISCONNECTED
+
+        if io is not None:
+            self.io = io
+        else:
+            self.connect(serial_port)
+
+    def connect(self, port=None):
+        if port is None:
+            port = find_device()
+        self.io = connect(port)
+        if self.io.is_open:
+            self.state = SerialPortState.CONNECTED
+
+    def disconnect(self):
+        disconnect(self.io)
+        self.state = SerialPortState.DISCONNECTED
+
+    def write(self, payload):
+        self.io.write(payload)
+
+    def read(self):
+        return self.io.read()
+
+    @property
+    def state(self):
+        return self._state
+
+    @state.setter
+    def state(self, state):
+        self._state = state
 
 
 class Fluke287(object):
@@ -187,42 +255,16 @@ class Fluke287(object):
     """
 
     def __init__(self, io):
-        """
-        
-        :param io: Any object with read and write methods attached. 
-        """
-        self.io = io
+        self._io = io
 
     def query_identification(self):
         """ return identification dict """
-        return query_identification(self.io)
+        return query_identification(self._io)
 
     def query_display_data(self):
         """ returns all displayed data"""
-        return query_display_data(self.io)
+        return query_display_data(self._io)
 
     def query_primary_measurement(self):
         """ returns primary value, unit and mode """
-        return query_primary_measurement(self.io)
-
-
-class HwAdapter(object):
-
-    def __init__(self, io):
-        """
-
-        :param io: Any object with read and write methods attached. 
-        """
-        self.io = io
-
-    def read(self) -> str:
-        return read(self.io, 1)
-
-    def write(self, out: str):
-        return write(self.io, out)
-
-    def read_until(self, terminator: str, timeout=SERIAL_TIMEOUT, size=None) -> str:
-        return read_until(self, terminator, timeout, size)
-
-
-
+        return query_primary_measurement(self._io)

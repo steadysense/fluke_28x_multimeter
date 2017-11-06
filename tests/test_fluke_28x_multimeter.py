@@ -11,7 +11,7 @@ from fluke_28x_multimeter import *
 from fluke_28x_multimeter import cli
 
 
-class TestFluke28xMultimeter(TestCase):
+class TestSerialConnection(TestCase):
     """Tests for `fluke_28x_multimeter` package."""
 
     def setUp(self):
@@ -34,7 +34,7 @@ class TestFluke28xMultimeter(TestCase):
 
     def test_find_port(self):
         device = find_device()
-        assert find_device is not None, "Device not found"
+        assert device is not None, "Device not found"
 
     def test_connect(self):
         device = find_device()
@@ -42,23 +42,30 @@ class TestFluke28xMultimeter(TestCase):
         assert ser.is_open is True, "Port could not be opened"
         ser.close()
 
-    def test_display(self):
+class TestQueries(TestCase):
+    """Tests for `fluke_28x_multimeter` package."""
+    ser = None
+
+    def setUp(self):
         device = find_device()
-        ser = connect(device)
-        assert ser.is_open is True, "Port could not be opened"
-        fluke = Fluke287(ser)
-        d = fluke.query_display_data()
+        self.ser = connect(device)
+        assert self.ser.is_open is True, "Port could not be opened"
+
+    def tearDown(self):
+        disconnect(self.ser)
+
+    def test_id(self):
+        d = query_identification(self.ser)
+        print(d)
+        assert len(d) > 0, "Got no data from query"
+
+    def test_display(self):
+        d = query_display_data(self.ser)
         assert len(d.keys()) > 0, "Got no data from query"
-        disconnect(ser)
 
     def test_primary(self):
-        device = find_device()
-        ser = connect(device)
-        assert ser.is_open is True, "Port could not be opened"
-        fluke = Fluke287(ser)
-        d = fluke.query_display_data()
+        d = query_primary_measurement(self.ser)
         assert len(d.keys()) > 0, "Got no data from query"
-        disconnect(ser)
 
     def test_server(self):
         pass
