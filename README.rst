@@ -52,6 +52,62 @@ Features
 Commands
 --------
 
+ID - Simple DMM Identification
+Sample Output : FLUKE 287,V1.00,95830370
+
+IM - Advanced DMM Identification
+Sample Output : FLUKE 287,V1.00,95830370,MSP V0.84,clem/branches/release,r14216,0
+
+MFD - Unknown
+Sample Output : N/A
+
+OFF - Switch off DMM
+Sample Output : N/A
+
+QM - Get the currently displayed data
+Sample Output : -0.013E-3,VDC,NORMAL,NONE
+
+QBL - Display Battery Life
+Sample Output : FULL
+
+QCCV - Number of Calibration Done
+Sample Output : 2
+
+QCVN - Unknown Calibration-related version
+Sample Output : V0.14
+
+QDDA - TrendCapture Dump Settings
+Sample Output : UA_DC,NONE,AUTO,ADC,500,-6,OFF,0.000,0,2,LIVE,2e-08,ADC,-6,2,5,NORMAL,NONE,1206138689.349,PRIMARY,2e-08,ADC,-6,2,5,NORMAL,NONE,1206138689.349
+
+QDDB - TrendCapture Binary Dump ?
+Sample Output : Binary Data
+
+QMF - Current Setting
+Sample Output : MV_DC, NONE
+
+QMM - Query Measurement Mode
+  * default mode : 0
+  * min-max mode: b'1,MIN_MAX_AVG'
+
+QMR - Show range selected
+Sample Output : 5,0
+
+QSN - Display Serial Number
+Sample Output : 12345678
+
+QSLS - Display Number of Memorized Data in that order : Records, Min/Max, Peak ,Measurement
+Sample Output : 5,7,1,3
+
+QSUS - Unknown
+Sample Output : DISABLED
+
+RI - Restore Factory Settings
+Sample Output : N/A
+
+RMP - Restore something?
+Sample Output : N/A
+
+
 Modes
 
 .. code-block:: console

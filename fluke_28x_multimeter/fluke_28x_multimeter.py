@@ -6,9 +6,12 @@ import datetime
 import time
 import serial
 from enum import Enum
+import logging
 
 __all__ = ['find_device', 'connect', 'disconnect', 'query_identification', 'query_display_data',
            'query_primary_measurement', "USB_SERIAL_NUMBER", "Fluke287"]
+
+logger = logging.getLogger(__name__)
 
 USB_SERIAL_NUMBER = 'AL03L2UV'
 SERIAL_TIMEOUT = 1.0
@@ -67,6 +70,7 @@ def read(io, n):
 
 
 def send_command(io, command: bytes):
+    logger.debug("-->", command)
     write(io, command + LINE_END)
 
 
@@ -83,6 +87,7 @@ def recv_response(io, terminator=LINE_END, size=None):
         if c:
             buffer += c
             if buffer[-lenterm:] == terminator:
+                logger.debug("<--", buffer)
                 return bytes(buffer[:-lenterm])
             if size is not None and len(buffer) >= size:
                 return bytes(buffer)
@@ -96,6 +101,8 @@ def execute_query(io, command: bytes):
     send_command(io, command)
     response = recv_response(io)
     ack = parse_command_ack(response)
+    if ack != Ack.RESPONSE_OK:
+        raise RuntimeError(f"Please check if DMM is stopped, ot {ack} on command {command}.")
     return ack
 
 
@@ -130,9 +137,25 @@ def query_identification(io) -> dict:
         ('softwareVersion', str),
         ('serialNumber', str)
     ]
-    data = {name: converter(value) for (value, (name, converter)) in zip(line_splitted, keys_id)}
 
-    return data
+    return {name: converter(value) for (value, (name, converter)) in zip(line_splitted, keys_id)}
+
+
+def query_primary_measurement(io) -> dict:
+    """
+    Reads primary measurement value, unit and mode
+    :param io: serial device, must be opened
+    :return: 
+    """
+    # Send command to multimeter
+    execute_query(io, b"QM")
+
+    # Read response from multimeter
+    line_from_serial = recv_response(io)
+    line_splitted = line_from_serial.decode("utf-8").split(',')
+
+    keys_primary = [('value', float), ('unit', str), ('state', str), ('attribute', str)]
+    return {name: converter(value) for (value, (name, converter)) in zip(line_splitted, keys_primary)}
 
 
 def query_display_data(io) -> dict:
@@ -147,63 +170,56 @@ def query_display_data(io) -> dict:
 
     # Read response from multimeter
     line_from_serial = recv_response(io)
-    line_splitted = line_from_serial.split(b',')
-    if "HOLD" in line_splitted:
-        line_splitted.pop(line_splitted.index("HOLD"))
-        measurement_mode = "HOLD"
-    elif "MIN_MAX_AVG" in line_splitted:
-        line_splitted.pop(line_splitted.index("MIN_MAX_AVG"))
-        measurement_mode = "MIN_MAX_AVG"
-    else:
-        measurement_mode = "NONE"
+    line_splitted = line_from_serial.decode("utf-8").split(',')
 
-    keys_base = ['primaryFunction', 'secondaryFunction', 'autoRangeState', 'baseUnit', 'rangeNumber', 'unitMultiplier',
-                 'lightningBolt', 'minMaxStartTime', 'numberOfModes', 'numberOfReadings']
-    keys_data = ['readingID', 'readingValue', 'baseUnitReading', 'unitMultiplierRecording', 'decimalPlaces',
-                 'displayDigits', 'readingState', 'readingAttribute', 'timeStamp']
+    meta_converters = [
+        ('primaryFunction', str),
+        ('secondaryFunction', str),
+        ('autoRangeState', str),
+        ('baseUnit', str),
+        ('rangeNumber', str),
+        ('unitMultiplier', str),
+        ('lightningBolt', str),
+        ('minMaxStartTime', float),
+        ('numberOfModes', int),
+        ('measurementMode', str),
+        ('numberOfReadings', int)
+    ]
 
-    # initialize base dictionary
-    data = collections.OrderedDict(zip(keys_base, line_splitted))
-    data['measurementMode'] = measurement_mode
-    data['values'] = []
+    meta = []
+    ivalues = iter(line_splitted)
+    iconverters = iter(meta_converters)
 
-    # adding recording data blocks containing the value to the base dictionary
-    for x in range(len(keys_base), len(line_splitted), len(keys_data)):
-        value = collections.OrderedDict(zip(keys_data, line_splitted[x: x + len(keys_data)]))
+    for n, ((name, formatter), item) in enumerate(zip(iconverters, ivalues)):
+        meta.append((name, formatter(item)))
 
-        # dict_add['readingValue'] = float(dict_add['readingValue'])
-        value['unitMultiplierRecording'] = int(value['unitMultiplierRecording'])
-        value['decimalPlaces'] = int(value['decimalPlaces'])
-        value['displayDigits'] = int(value['displayDigits'])
-        value['timeStamp'] = datetime.datetime.utcfromtimestamp(float(value['timeStamp']))
-        value['timeStamp'] = str(value['timeStamp'])  # TODO: use msgpack hook to format datetimes
-        value['timeStampComp'] = datetime.datetime.now()
-        value['timeStampComp'] = str(value['timeStampComp'])  # TODO: use msgpack hook to format datetimes
-        data['values'].append(value)
+        # see remote_spec_28X.doc:
+        # if numberOfModes is 0, then measurementMode is not present
+        # this happens on standard operation
+        if name == 'numberOfModes' and item == "0":
+            meta.append(('measurementMode', None))
+            next(iconverters)
 
-    return data
+    converters = [
+        ('readingID', str),
+        ('readingValue', float),
+        ('baseUnitReading', str),
+        ('unitMultiplierRecording', int),
+        ('decimalPlaces', int),
+        ('displayDigits', int),
+        ('readingState', str),
+        ('readingAttribute', str),
+        ('timeStamp', float)]
+    values = []
 
+    for reading_number in range(0, meta[-1][1] - 1):
+        value = []
+        iconverters = iter(converters)
+        for n, ((name, formatter), item) in enumerate(zip(iconverters, ivalues)):
+            value.append((name, formatter(item)))
+        values.append(value)
 
-def query_primary_measurement(io) -> dict:
-    """
-    Reads primary measurement value, unit and mode
-    :param io: serial device, must be opened
-    :return: 
-    """
-    # Send command to multimeter
-    send_command(io, b"QM")
-
-    # Read response from multimeter
-    line_from_serial = recv_response(io)
-    line_splitted = line_from_serial.split(b',')
-
-    keys_base = ['value', 'unit', 'state', 'attribute']
-
-    dict_base = collections.OrderedDict(zip(keys_base, line_splitted))
-    dict_base['value'] = float(dict_base['value'])
-    dict_base['timeStampComp'] = datetime.datetime.utcnow()
-
-    return dict_base
+    return values, meta
 
 
 class SerialPortState(Enum):

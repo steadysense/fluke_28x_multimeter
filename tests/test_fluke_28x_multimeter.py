@@ -56,17 +56,55 @@ class TestQueries(TestCase):
 
     def test_id(self):
         d = query_identification(self.ser)
-        print(d)
+        assert d.get("deviceName", "") == "FLUKE 287"
+        assert d.get("softwareVersion", "") == "V1.16"
         assert len(d) > 0, "Got no data from query"
 
     def test_display(self):
-        d = query_display_data(self.ser)
-        assert len(d.keys()) > 0, "Got no data from query"
+        values, meta = query_display_data(self.ser)
+
+        ## Todo: assert possible combinations
+        print("Meta:")
+        for n, (k, v) in enumerate(meta):
+            print("  ", n, k, v)
+
+        print("Values:")
+        for n, value in enumerate(values):
+            print("  ", n)
+            for n, (k, v) in enumerate(value):
+                print("    ", n, k, v)
 
     def test_primary(self):
         d = query_primary_measurement(self.ser)
+        print(d)
         assert len(d.keys()) > 0, "Got no data from query"
+
+    def test_benchmarks(self):
+        iterations = 100
+        benchmark(iterations, query_identification, (self.ser))
+        benchmark(iterations, query_display_data, (self.ser))
+        benchmark(iterations, query_identification, (self.ser))
+
 
     def test_server(self):
         pass
+
+
+def benchmark(iterations, func, *args, **kwargs):
+    import timeit
+    timer = timeit.default_timer()
+    times = []
+    for i in range(iterations):
+        times.append(timer)
+        func(*args)
+        times.append(timer)
+
+    deltas = [times[i] - times[i - 1] for i in range(1, len(times))]
+
+
+    try:
+        from text_histogram import histogram
+        print(histogram(deltas))
+    except Exception as e:
+        print("Historgam not supported")
 
