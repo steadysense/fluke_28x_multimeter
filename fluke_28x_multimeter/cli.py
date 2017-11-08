@@ -4,96 +4,84 @@
 
 import sys
 import click
-import time
 from fluke_28x_multimeter import *
+from fluke_28x_multimeter.out import write_csv
 
 
 @click.group()
 @click.option("-v", "--verbose", type=click.BOOL, is_flag=True, help="print more output")
-@click.pass_obj
-def main(serial, verbose):
+@click.pass_context
+def main(ctx, verbose):
     """Console script for fluke_28x_multimeter."""
     if verbose:
         click.echo("Fluke 287")
 
-    port = find_device()
-    if port is None:
-        if port is None:
-            click.echo(f"Device with {USB_SERIAL_NUMBER} not found")
-            click.echo("Available devices:")
-            for port in comports():
-                click.echo(f"  * {port.device} - SN:{port.serial_number}")
-            sys.exit(1)
-
-    if verbose:
-        click.echo(f"Connecting to {port}")
-
-    serial = connect(port)
-    if not serial.is_open:
-        click.echo(f"Could not open {port}, exiting")
+    fluke = Fluke287()
+    if not fluke.is_connected:
+        from serial.tools.list_ports import comports
+        click.echo(f"Device with {USB_SERIAL_NUMBER} not found")
+        click.echo("Available devices:")
+        for port in comports():
+            click.echo(f"  * {port.device} - SN:{port.serial_number}")
         sys.exit(1)
 
+    ctx.obj = fluke
 
 
 @main.command()
 @click.option("-f", "--fmt", type=click.STRING, default="csv", help="output format")
 @click.pass_obj
-def display(serial, fmt):
+def values(fluke, fmt):
     """
     Displays all values shown on the multimeters screen
     :param serial: 
     :param fmt:
     :return: 
     """
-    for n, data in enumerate(loop(serial, query_display_data, ())):
-        if fmt == "csv":
-            if n == 1:
-                click.echo(",".join(data.keys()))
-            click.echo(",".join([str(val) for val in data.values()]))
-
+    data = fluke.values
+    if fmt == "csv":
+        write_csv(data, head=True)
     return data
 
 
 @main.command()
 @click.option("-f", "--fmt", type=click.STRING, default="csv", help="output format")
-@click.option
 @click.pass_obj
-def primary(serial, fmt):
+def value(fluke, fmt):
     """
     Displays primary measurement from Multimeter
     :param serial: 
     :param fmt:
     :return: 
     """
-    data = query_primary_measurement(serial)
+    data = fluke.value
     if fmt == "csv":
-        click.echo(",".join(data.keys()))
-        click.echo(",".join([str(val) for val in data.values()]))
+        write_csv(data, head=True)
     return data
 
 
 @main.command()
 @click.option("-f", "--fmt", type=click.STRING, default="csv", help="output format")
 @click.pass_obj
-def identify(serial, fmt):
+def id(fluke, fmt):
     """
     Displays information about connected Device
     :param serial: 
     :param fmt: 
     :return: 
     """
-    data = query_identification(serial)
+    data = fluke.id
     if fmt == "csv":
-        click.echo(",".join([str(val) for val in data.keys()]))
-        click.echo(",".join([str(val) for val in data.values()]))
+        write_csv(data, head=True)
+    return data
 
 
 @main.command()
 @click.option("--server", "serve_type", flag_value="bind", help="server mode")
 @click.option("--client", "serve_type", flag_value="connect", help="client mode")
-@click.option("-e", "--endpoint", type=click.STRING, default="tcp://0.0.0.0:20010", help="endpoint to use")
-@click.pass_context
-def serve(ctx, serve_type, endpoint):
+@click.option("-e", "--endpoint", type=click.STRING, default="tcp://127.0.0.1:1234", help="endpoint to use")
+@click.pass_obj
+def serve(fluke, serve_type, endpoint):
     """
     Starts a server to expose Multimeter on network
     :param ctx: 
@@ -101,63 +89,53 @@ def serve(ctx, serve_type, endpoint):
     :param endpoint: 
     :return: 
     """
-    import zerorpc
-    import gevent
-    from gevent import monkey
-    monkey.patch_all()
 
-    server = zerorpc.Server(ctx.obj)
+    try:
+        import gevent
+        from gevent import monkey
+        monkey.patch_all()
+        import zerorpc
+        import time
+    except Exception as e:
+        click.secho(f"zerorpc not found, cant serve. {e}", color="red")
+        sys.exit(1)
 
+    loops = {k: False for k in fluke.queries.keys()}
+
+    @zerorpc.stream
+    def start_loop(query, intervalMs):
+        loops[query] = True
+        intervalMs = int(intervalMs)
+        while loops[query] is True:
+            if not fluke.is_connected:
+                logger.error(f"Device is not connected {e}")
+                fluke.connect()
+            try:
+                yield fluke.execute(query)
+            except TimeoutError as e:
+                logger.error(f"Timeout error, check device connection. {e}")
+
+            time.sleep(intervalMs)
+
+    def stop_loop(query):
+        loops[query] = False
+
+    worker = zerorpc.Server(methods={
+        "isConnected": fluke.is_connected,
+        "execute": fluke.execute,
+        "startLoop": start_loop,
+        "stopLoop": stop_loop
+    })
     if serve_type == "bind":
-        click.echo(f"Bind to {endpoint}")
-        server.bind(endpoint=endpoint)
+        worker.bind(endpoint=endpoint)
+        click.echo(f"Bound to {endpoint}", color="green")
 
     if serve_type == "connect":
-        click.echo(f"Connecting to {endpoint}")
-        server.connect(endpoint)
+        worker.connect(endpoint)
+        click.echo(f"Connected to {endpoint}", color="green")
 
-    greenlets = [gevent.spawn(server.run), gevent.spawn(loop, ctx.obj)]
+    greenlets = [gevent.spawn(worker.run)]
     gevent.joinall(greenlets)
-
-
-def is_open(serial):
-    """ """
-    if serial.is_open:
-        return True
-    return False
-
-
-def serial_open():
-    """ """
-    port = find_device()
-    if port is not None:
-        serial = connect(port)
-        query_identification(serial)
-        click.echo(f"Established connection on port {port}")
-        return serial
-    else:
-        click.echo("Device not found. ")
-        return False
-
-
-def write_csv(data, head=True):
-    """ """
-    import csv
-    writer = csv.DictWriter(sys.stdout, data.keys())
-    if head is True:
-        writer.writeheader()
-
-    writer.writerow(data)
-
-
-def loop(serial, func, *args, **kwargs):
-    """ Main loop, used to reconnect the device, yields result of callable for each iteration """
-    while True:
-        if not is_open(serial):
-            time.sleep(1)
-            continue
-
-        yield serial, func(serial, *args, **kwargs)
 
 
 if __name__ == "__main__":
