@@ -2,7 +2,7 @@
 
 """Main module."""
 import time
-from enum import Enum
+from enum import IntEnum
 import logging
 import abc
 from collections import namedtuple
@@ -14,8 +14,8 @@ BAUDRATE = 115200
 TERMINATOR = b"\r"
 
 commands = ['find', 'connect', 'disconnect', 'settings', 'receive', 'send']
-queries = ['ID', "QDDA", "QM"]
-constants = ["USB_SERIAL_NUMBER", "TIMEOUT", "ENCODING", "BAUDRATE", "TERMINATOR"]
+queries = ['ID', "QDDA", "QM", "PMM", "PF1"]
+constants = ["USB_SERIAL_NUMBER", "TIMEOUT", "ENCODING", "BAUDRATE", "TERMINATOR", "RESPONSE_CODE"]
 
 __all__ = queries + commands + constants
 
@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 Response = namedtuple("Response", ["status", "data", "payload"])
 Request = namedtuple("Request", ["name", "args", "payload", "response"])
 
-class RESPONSE_CODE(Enum):
+class RESPONSE_CODE(IntEnum):
     RESPONSE_OK = 0
     ERROR_SYNTAX = 1
     ERROR_EXECUTION = 2
@@ -69,8 +69,8 @@ def find(serial_number=USB_SERIAL_NUMBER):
 def connect(port=None):
     """
     Opens a serial port and configures it.
-    :param port: 
-    :return: 
+    :param port:
+    :return:
     """
     from serial import Serial
     return Serial(port=port or find(USB_SERIAL_NUMBER), baudrate=BAUDRATE, timeout=TIMEOUT)
@@ -128,14 +128,14 @@ class Query(abc.ABC):
     def execute(cls, io, *args, **kwargs):
         """
         Executes the query
-        
+
         1. builds a request object from request_format, args and kwargs
         2. sends request
         3. receives and parses ack
-        4. receives and parse data if any        
-        
-        
-        
+        4. receives and parse data if any
+
+
+
         :param io: a class with send and recv method
         :param args: arguments to pass to query
         :param kwargs: kwargs to pass to query
@@ -143,12 +143,11 @@ class Query(abc.ABC):
         """
         request = cls.build_request(cls.request_format, *args, **kwargs)
         io.send(request.payload)
-
         ack_response = io.recv()
         ack = cls.parse_ack(ack_response, *args, **kwargs)
         if ack != RESPONSE_CODE.RESPONSE_OK:
             return request._replace(
-            response=Response(ack, FlukeError(f"Request {request} failed with {ack}, received {ack_response}"))
+            response=Response(ack, FlukeError(ack, f"Request {request} failed with {ack}, received {ack_response}"), ack_response)
             )
 
         response_payload = io.recv() if len(cls.properties) != 0 else None
@@ -248,3 +247,20 @@ class QDDA(Query):
                   for _ in range(settings[-1][1])]
 
         return [dict(settings + value) for value in values]
+
+
+class PMM(Query):
+    request_format = b"PRESS MINMAX"
+    @classmethod
+    def parse_response(cls, response, *args, **kwargs):
+        line_splitted = response.decode(kwargs.get("encoding", ENCODING))
+        return {name: clazz(value) for (value, (name, clazz)) in zip(line_splitted, cls.properties)}
+
+
+class PF1(Query):
+    request_format = b"PRESS F1"
+
+
+class PF4(Query):
+    request_format = b"PRESS F4"
+
