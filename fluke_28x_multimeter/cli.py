@@ -9,7 +9,8 @@ from fluke_28x_multimeter.out import write_csv
 
 
 @click.group()
-@click.option("-v", "--verbose", type=click.BOOL, is_flag=True, help="print more output")
+@click.option("-v", "--verbose", type=click.BOOL, is_flag=True,
+              help="print more output")
 @click.pass_context
 def main(ctx, verbose):
     """Console script for fluke_28x_multimeter."""
@@ -29,14 +30,15 @@ def main(ctx, verbose):
 
 
 @main.command()
-@click.option("-f", "--fmt", type=click.STRING, default="csv", help="output format")
+@click.option("-f", "--fmt", type=click.STRING, default="csv",
+              help="output format")
 @click.pass_obj
 def values(fluke, fmt):
     """
     Displays all values shown on the multimeters screen
-    :param serial: 
+    :param serial:
     :param fmt:
-    :return: 
+    :return:
     """
     data = fluke.values
     if fmt == "csv":
@@ -45,14 +47,15 @@ def values(fluke, fmt):
 
 
 @main.command()
-@click.option("-f", "--fmt", type=click.STRING, default="csv", help="output format")
+@click.option("-f", "--fmt", type=click.STRING, default="csv",
+              help="output format")
 @click.pass_obj
 def value(fluke, fmt):
     """
     Displays primary measurement from Multimeter
-    :param serial: 
+    :param serial:
     :param fmt:
-    :return: 
+    :return:
     """
     data = fluke.value
     if fmt == "csv":
@@ -61,14 +64,15 @@ def value(fluke, fmt):
 
 
 @main.command()
-@click.option("-f", "--fmt", type=click.STRING, default="csv", help="output format")
+@click.option("-f", "--fmt", type=click.STRING, default="csv",
+              help="output format")
 @click.pass_obj
 def id(fluke, fmt):
     """
     Displays information about connected Device
-    :param serial: 
-    :param fmt: 
-    :return: 
+    :param serial:
+    :param fmt:
+    :return:
     """
     data = fluke.id
     if fmt == "csv":
@@ -78,16 +82,18 @@ def id(fluke, fmt):
 
 @main.command()
 @click.option("--server", "serve_type", flag_value="bind", help="server mode")
-@click.option("--client", "serve_type", flag_value="connect", help="client mode")
-@click.option("-e", "--endpoint", type=click.STRING, default="tcp://127.0.0.1:1234", help="endpoint to use")
+@click.option("--client", "serve_type", flag_value="connect",
+              help="client mode")
+@click.option("-e", "--endpoint", type=click.STRING,
+              default="tcp://192.168.0.100:1234", help="endpoint to use")
 @click.pass_obj
 def serve(fluke, serve_type, endpoint):
     """
     Starts a server to expose Multimeter on network
-    :param ctx: 
-    :param serve_type: 
-    :param endpoint: 
-    :return: 
+    :param ctx:
+    :param serve_type:
+    :param endpoint:
+    :return:
     """
 
     try:
@@ -111,9 +117,12 @@ def serve(fluke, serve_type, endpoint):
                 logger.error(f"Device is not connected {e}")
                 fluke.connect()
             try:
-                yield fluke.execute(query)
+                res = fluke.execute(query)
+                zerorpc.RemoteError()
+
             except TimeoutError as e:
-                logger.error(f"Timeout error, check device connection. {e}")
+                FlukeError(f"Timeout error, check device connection. {e}")
+                logger.error()
 
             time.sleep(intervalMs)
 
@@ -122,9 +131,9 @@ def serve(fluke, serve_type, endpoint):
 
     worker = zerorpc.Server(methods={
         "isConnected": fluke.is_connected,
-        "execute": fluke.execute,
-        "startLoop": start_loop,
-        "stopLoop": stop_loop
+        "execute":     fluke.execute,
+        "startLoop":   start_loop,
+        "stopLoop":    stop_loop
     })
     if serve_type == "bind":
         worker.bind(endpoint=endpoint)
