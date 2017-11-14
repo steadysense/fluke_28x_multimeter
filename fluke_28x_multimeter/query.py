@@ -23,11 +23,14 @@ logger = logging.getLogger(__name__)
 Response = namedtuple("Response", ["status", "data", "payload"])
 Request = namedtuple("Request", ["name", "args", "payload", "response"])
 
+
 class RESPONSE_CODE(IntEnum):
     RESPONSE_OK = 0
     ERROR_SYNTAX = 1
     ERROR_EXECUTION = 2
     NO_DATA = 5
+    SERIAL_NOT_CONNECTED = 97
+    SERIAL_TIMEOUT = 98
     NOT_SUPPORTED = 99
 
     @staticmethod
@@ -48,7 +51,7 @@ class FlukeError(Exception):
     def __init__(self, response_code, msg):
         super(FlukeError, self).__init__()
         self.code = response_code.value
-        self.name =response_code.name
+        self.name = response_code.name
         self.msg = msg
         self.hint = f"{response_code.name}: Check if device is turned on and cable is connected"
 
@@ -102,7 +105,9 @@ def receive(io, terminator=TERMINATOR, size=None, timeout=TIMEOUT):
             if size is not None and len(buffer) >= size:
                 return bytes(buffer)
         if time.monotonic() - start > TIMEOUT:
-            raise TimeoutError(f"Timeout exceeded ({timeout}), recieved: {buffer}")
+            raise TimeoutError(
+                f"Timeout exceeded ({timeout}), recieved: {buffer}")
+
 
 class Query(abc.ABC):
     request_format = None
@@ -113,7 +118,8 @@ class Query(abc.ABC):
 
     @classmethod
     def build_request(cls, request, *args, **kwargs):
-        return Request(cls.__name__, args, (request % args) + TERMINATOR, Response(None, None, None))
+        return Request(cls.__name__, args, (request % args) + TERMINATOR,
+                       Response(None, None, None))
 
     @classmethod
     def parse_ack(cls, response, *args, **kwargs):
@@ -147,16 +153,21 @@ class Query(abc.ABC):
         ack = cls.parse_ack(ack_response, *args, **kwargs)
         if ack != RESPONSE_CODE.RESPONSE_OK:
             return request._replace(
-            response=Response(ack, FlukeError(ack, f"Request {request} failed with {ack}, received {ack_response}"), ack_response)
+                response=Response(ack, FlukeError(
+                    ack,
+                    f"Request {request} failed with {ack}, received {ack_response}"),
+                    ack_response)
             )
 
         response_payload = io.recv() if len(cls.properties) != 0 else None
         try:
-            response_data = cls.parse_response(response_payload, *args, **kwargs)
+            response_data = cls.parse_response(response_payload, *args,
+                                               **kwargs)
         except (ValueError, KeyError) as e:
             response_data = e
 
-        return request._replace(response=Response(ack, response_data, response_payload))
+        return request._replace(
+            response=Response(ack, response_data, response_payload))
 
     def __call__(self, *args, **kwargs):
         self.execute(self._io, *args, **kwargs)
@@ -172,8 +183,10 @@ class ID(Query):
 
     @classmethod
     def parse_response(cls, response, *args, **kwargs):
-        line_splitted = response.decode(kwargs.get("encoding", ENCODING)).split(',')
-        return {name: clazz(value) for (value, (name, clazz)) in zip(line_splitted, cls.properties)}
+        line_splitted = response.decode(
+            kwargs.get("encoding", ENCODING)).split(',')
+        return {name: clazz(value) for (value, (name, clazz)) in
+                zip(line_splitted, cls.properties)}
 
 
 class QM(Query):
@@ -187,8 +200,10 @@ class QM(Query):
 
     @classmethod
     def parse_response(cls, response, *args, **kwargs):
-        line_splitted = response.decode(kwargs.get("encoding", ENCODING)).split(',')
-        return {name: clazz(value) for (value, (name, clazz)) in zip(line_splitted, cls.properties)}
+        line_splitted = response.decode(
+            kwargs.get("encoding", ENCODING)).split(',')
+        return {name: clazz(value) for (value, (name, clazz)) in
+                zip(line_splitted, cls.properties)}
 
 
 class QDDA(Query):
@@ -244,11 +259,14 @@ class QDDA(Query):
             for (name, formatter), item in zip(iconverters, ivalues):
                 yield (name, formatter(item))
 
-        line_splitted = response.decode(kwargs.get("encoding", ENCODING)).split(',')
+        line_splitted = response.decode(
+            kwargs.get("encoding", ENCODING)).split(',')
 
         ivalues = iter(line_splitted)
-        settings = [(name, value) for name, value in parse_settings(ivalues, iter(cls.settings_properties))]
-        values = [[(name, value) for name, value in parse_values(ivalues, iter(cls.values_properties))]
+        settings = [(name, value) for name, value in
+                    parse_settings(ivalues, iter(cls.settings_properties))]
+        values = [[(name, value) for name, value in
+                   parse_values(ivalues, iter(cls.values_properties))]
                   for _ in range(settings[-1][1])]
 
         return [dict(settings + value) for value in values]
@@ -259,6 +277,7 @@ class PMM(Query):
 
 class PF1(Query):
     request_format = b"PRESS F1"
+
 
 class PF4(Query):
     request_format = b"PRESS F4"
