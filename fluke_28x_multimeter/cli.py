@@ -81,11 +81,19 @@ def id(fluke, fmt):
 
 
 @main.command()
-@click.option("--server", "serve_type", flag_value="bind", help="server mode")
-@click.option("--client", "serve_type", flag_value="connect",
+@click.option("--server",
+              "serve_type",
+              flag_value="bind",
+              help="server mode")
+@click.option("--client",
+              "serve_type",
+              flag_value="connect",
               help="client mode")
-@click.option("-e", "--endpoint", type=click.STRING,
-              default="tcp://192.168.0.100:1234", help="endpoint to use")
+@click.option("-e", "--endpoint",
+              type=click.STRING,
+              default="tcp://192.168.0.100:1235",
+              help="endpoint of remote server or local bind",
+              show_default=True)
 @click.pass_obj
 def serve(fluke, serve_type, endpoint):
     """
@@ -117,9 +125,7 @@ def serve(fluke, serve_type, endpoint):
                 logger.error(f"Device is not connected {e}")
                 fluke.connect()
             try:
-                res = fluke.execute(query)
-                zerorpc.RemoteError()
-
+                yield fluke.execute(query)
             except TimeoutError as e:
                 FlukeError(f"Timeout error, check device connection. {e}")
                 logger.error()
@@ -130,18 +136,20 @@ def serve(fluke, serve_type, endpoint):
         loops[query] = False
 
     worker = zerorpc.Server(methods={
-        "isConnected": fluke.is_connected,
+        "status": lambda: fluke.status,
+        "isConnected": lambda: fluke.is_connected,
         "execute":     fluke.execute,
         "startLoop":   start_loop,
         "stopLoop":    stop_loop
     })
+
     if serve_type == "bind":
         worker.bind(endpoint=endpoint)
-        click.echo(f"Bound to {endpoint}", color="green")
+        click.secho(f"Bound to {endpoint}", color="green")
 
     if serve_type == "connect":
         worker.connect(endpoint)
-        click.echo(f"Connected to {endpoint}", color="green")
+        click.secho(f"Connected to {endpoint}", color="green")
 
     greenlets = [gevent.spawn(worker.run)]
     gevent.joinall(greenlets)

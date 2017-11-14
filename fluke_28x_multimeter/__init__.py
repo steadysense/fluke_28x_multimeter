@@ -78,7 +78,6 @@ class Fluke287(object):
         request = q.execute(self, *args, **kwargs)
         return request.response.data
 
-
     def restart(self):
         """ press restart button on display """
         return self.execute(PF1)
