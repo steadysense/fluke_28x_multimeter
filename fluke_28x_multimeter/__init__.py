@@ -100,6 +100,8 @@ class Fluke287(object):
         # change measurement mode to MinMax if measurement Mode is None
         if not request[1]['measurementMode']:
             self.execute(PMM)
+        return True
+
 
     def hold_off(self):
         """ verify that hold button is not pressed"""
@@ -133,4 +135,3 @@ class Fluke287(object):
     def value(self):
         """ returns primary value, unit and mode """
         return self.execute(QM)
-

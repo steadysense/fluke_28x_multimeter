@@ -34,9 +34,9 @@ def main(ctx, verbose):
 def values(fluke, fmt):
     """
     Displays all values shown on the multimeters screen
-    :param serial: 
+    :param serial:
     :param fmt:
-    :return: 
+    :return:
     """
     data = fluke.values
     if fmt == "csv":
@@ -50,9 +50,9 @@ def values(fluke, fmt):
 def value(fluke, fmt):
     """
     Displays primary measurement from Multimeter
-    :param serial: 
+    :param serial:
     :param fmt:
-    :return: 
+    :return:
     """
     data = fluke.value
     if fmt == "csv":
@@ -66,9 +66,9 @@ def value(fluke, fmt):
 def id(fluke, fmt):
     """
     Displays information about connected Device
-    :param serial: 
-    :param fmt: 
-    :return: 
+    :param serial:
+    :param fmt:
+    :return:
     """
     data = fluke.id
     if fmt == "csv":
@@ -84,10 +84,10 @@ def id(fluke, fmt):
 def serve(fluke, serve_type, endpoint):
     """
     Starts a server to expose Multimeter on network
-    :param ctx: 
-    :param serve_type: 
-    :param endpoint: 
-    :return: 
+    :param ctx:
+    :param serve_type:
+    :param endpoint:
+    :return:
     """
 
     try:
@@ -124,7 +124,9 @@ def serve(fluke, serve_type, endpoint):
         "isConnected": fluke.is_connected,
         "execute": fluke.execute,
         "startLoop": start_loop,
-        "stopLoop": stop_loop
+        "stopLoop": stop_loop,
+        "holdOff": fluke.hold_off,
+        "minMax": fluke.min_max
     })
     if serve_type == "bind":
         worker.bind(endpoint=endpoint)

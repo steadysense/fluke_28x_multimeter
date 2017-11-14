@@ -100,11 +100,31 @@ class TestQueryClasses(TestCase):
 
     def testQM(self):
         request = QM.execute(self.fluke)
+        if request.response.status == RESPONSE_CODE.ERROR_EXECUTION:
+            self.fluke.restart()
+            request = QM.execute(self.fluke)
         print_request(request)
 
     def testQDDA(self):
         request = QDDA.execute(self.fluke)
+        if request.response.status == RESPONSE_CODE.ERROR_EXECUTION:
+            self.fluke.restart()
+            request = QDDA.execute(self.fluke)
         print_request(request)
+
+    def testPF1(self):
+        request = PF1.execute(self.fluke)
+        print_request(request)
+
+    def testPMM(self):
+        request = QDDA.execute(self.fluke)
+        if request.response.status == RESPONSE_CODE.ERROR_EXECUTION:
+            self.fluke.restart()
+            request = QDDA.execute(self.fluke)
+        if request.response.data[1]['measurementMode'] is None:
+            PMM.execute(self.fluke)
+
+        # check what happens if hold is pressed
 
 
 def print_request(request):
@@ -137,7 +157,7 @@ class TestFluke287Properties(TestCase):
         pprint.pprint(data)
 
     def testValuesProperty(self):
-        data = self.fluke.value
+        data = self.fluke.values
         pprint.pprint(data)
 
     def testStatusProperty(self):
@@ -147,9 +167,16 @@ class TestFluke287Properties(TestCase):
         assert "connection" in data.keys(), "connection not in data keys"
         assert "connected" in data.keys(), "connected not in data keys"
 
+    def testMinMax(self):
+        response = self.fluke.min_max
+
+    def testHoldOff(self):
+        response = self.fluke.hold_off
+
     def testBenchmark(self):
         # benchmark(1000, getattr, self.fluke, "value")
         pass
+
 
 
 class TestFluke287Server(object):
