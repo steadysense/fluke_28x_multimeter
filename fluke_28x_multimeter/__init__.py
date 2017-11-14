@@ -15,7 +15,7 @@ class Fluke287(object):
     """
     Base object for communication with Fluke287 Multimeter
     """
-    queries = {q.__name__: q for q in [QM, QDDA, ID]}
+    queries = {q.__name__: q for q in [QM, QDDA, ID, PMM, PF1, HOLD]}
 
     def __init__(self, io=None, port=None):
         if io is None:
@@ -71,12 +71,42 @@ class Fluke287(object):
         :param query: query name or class
         :param args: query arguments
         :param kwargs: query keyword arguments
-        :return: 
+        :return:
         """
         logger.info(f"Executing {query}({args}, {kwargs})")
         q = self.find_query(query)
         request = q.execute(self, *args, **kwargs)
         return request.response.data
+
+
+    def restart(self):
+        """ press restart button on display """
+        return self.execute(PF1)
+
+    def min_max(self):
+        """ set display to MinMax mode """
+        request = self.execute(QDDA)
+
+        # restart recording if recording is stopped
+        if type(request) == query.FlukeError and request.code == RESPONSE_CODE.ERROR_EXECUTION:
+            self.restart()
+            request = self.execute(QDDA)
+
+        # turn off hold mode
+        if "HOLD" in request[1]['measurementMode']:
+            self.hold_off()
+            request = self.execute(QDDA)
+
+        # change measurement mode to MinMax if measurement Mode is None
+        if not request[1]['measurementMode']:
+            self.execute(PMM)
+
+    def hold_off(self):
+        """ verify that hold button is not pressed"""
+        request = self.execute(QDDA)
+        if "HOLD" in request[1]['measurementMode']:
+            self.execute(HOLD)
+        return True
 
     @property
     def status(self):
@@ -98,7 +128,9 @@ class Fluke287(object):
         """ returns all displayed data"""
         return self.execute(QDDA)
 
+
     @property
     def value(self):
         """ returns primary value, unit and mode """
         return self.execute(QM)
+

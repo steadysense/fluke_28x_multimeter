@@ -14,9 +14,8 @@ BAUDRATE = 115200
 TERMINATOR = b"\r"
 
 commands = ['find', 'connect', 'disconnect', 'settings', 'receive', 'send']
-queries = ['ID', "QDDA", "QM", "PMM", "PF1"]
-constants = ["USB_SERIAL_NUMBER", "TIMEOUT", "ENCODING", "BAUDRATE",
-             "TERMINATOR", "RESPONSE_CODE"]
+queries = ['ID', "QDDA", "QM", "PMM", "PF1", "HOLD"]
+constants = ["USB_SERIAL_NUMBER", "TIMEOUT", "ENCODING", "BAUDRATE", "TERMINATOR", "RESPONSE_CODE"]
 
 __all__ = queries + commands + constants
 
@@ -77,8 +76,7 @@ def connect(port=None):
     :return:
     """
     from serial import Serial
-    return Serial(port=port or find(USB_SERIAL_NUMBER), baudrate=BAUDRATE,
-                  timeout=TIMEOUT)
+    return Serial(port=port or find(USB_SERIAL_NUMBER), baudrate=BAUDRATE, timeout=TIMEOUT)
 
 
 def settings(io):
@@ -248,9 +246,14 @@ class QDDA(Query):
                 # see remote_spec_28X.doc:
                 # if numberOfModes is 0, then measurementMode is not present
                 # this happens on standard operation
-                if name == 'numberOfModes' and item == "0":
-                    yield ('measurementMode', None)
-                    next(iconverters)
+                if name == 'numberOfModes':
+                    n, c = next(iconverters)
+                    if item == "0":
+                        yield ('measurementMode', [])
+                    elif item == "2":
+                        yield ('measurementMode', [c(next(ivalues)), c((next(ivalues)))])
+                    else:
+                        yield('measurementMode', [c(next(ivalues))])
 
         def parse_values(ivalues, iconverters):
             for (name, formatter), item in zip(iconverters, ivalues):
@@ -272,16 +275,12 @@ class QDDA(Query):
 class PMM(Query):
     request_format = b"PRESS MINMAX"
 
-    @classmethod
-    def parse_response(cls, response, *args, **kwargs):
-        line_splitted = response.decode(kwargs.get("encoding", ENCODING))
-        return {name: clazz(value) for (value, (name, clazz)) in
-                zip(line_splitted, cls.properties)}
-
-
 class PF1(Query):
     request_format = b"PRESS F1"
 
 
 class PF4(Query):
     request_format = b"PRESS F4"
+
+class HOLD(Query):
+    request_format = b'PRESS HOLD'
