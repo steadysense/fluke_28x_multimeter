@@ -4,6 +4,7 @@
 
 import sys
 import click
+import timeit
 from fluke_28x_multimeter import *
 from fluke_28x_multimeter.out import write_csv
 
@@ -16,6 +17,8 @@ def main(ctx, verbose):
     """Console script for fluke_28x_multimeter."""
     if verbose:
         click.echo("Fluke 287")
+
+    logging.basicConfig(level=logging.DEBUG, format='%(asctime)-15s %(message)s')
 
     fluke = Fluke287()
     if not fluke.is_connected:
@@ -114,26 +117,30 @@ def serve(fluke, serve_type, endpoint):
         click.secho(f"zerorpc not found, cant serve. {e}", color="red")
         sys.exit(1)
 
-    loops = {k: False for k in fluke.queries.keys()}
+    loops = {k: -1 for k in fluke.queries.keys()}
 
     @zerorpc.stream
-    def start_loop(query, intervalMs):
-        loops[query] = True
-        intervalMs = int(intervalMs)
-        while loops[query] is True:
+    def start_loop(query, intervalS):
+        timer = timeit.default_timer
+        try:
+            loops[query] = float(intervalS)
+        except ValueError as e:
+            loops[query] = int(intervalS)
+
+        while loops[query] > 0.0:
+            start_time = timer()
             if not fluke.is_connected:
                 logger.error(f"Device is not connected {e}")
                 fluke.connect()
-            try:
-                yield fluke.execute(query)
-            except TimeoutError as e:
-                FlukeError(f"Timeout error, check device connection. {e}")
-                logger.error()
 
-            time.sleep(intervalMs)
+            yield fluke.execute(query)
+
+            while timer()-start_time < loops[query]:
+                time.sleep(0.1)
 
     def stop_loop(query):
-        loops[query] = False
+        loops[query] = -1
+
 
     worker = zerorpc.Server(methods={
         "holdOff": fluke.hold_off,

@@ -48,8 +48,9 @@ class RESPONSE_CODE(IntEnum):
 
 
 class FlukeError(Exception):
-    def __init__(self, response_code, msg):
+    def __init__(self, response_code, msg, request):
         super(FlukeError, self).__init__()
+        self.request = request
         self.code = response_code.value
         self.name = response_code.name
         self.msg = msg
@@ -88,6 +89,7 @@ def disconnect(io):
 
 
 def send(io, request):
+    logger.debug(f"-->{request}")
     io.write(request)
 
 
@@ -101,8 +103,12 @@ def receive(io, terminator=TERMINATOR, size=None, timeout=TIMEOUT):
         if c:
             buffer += c
             if buffer[-lenterm:] == terminator:
+                ret = bytes(buffer[:-lenterm])
+                logger.debug(f"<--{ret}")
                 return bytes(buffer[:-lenterm])
             if size is not None and len(buffer) >= size:
+                ret = bytes(buffer)
+                logger.debug(f"<--warning:{ret}")
                 return bytes(buffer)
         if time.monotonic() - start > TIMEOUT:
             raise TimeoutError(
@@ -152,12 +158,10 @@ class Query(abc.ABC):
         ack_response = io.recv()
         ack = cls.parse_ack(ack_response, *args, **kwargs)
         if ack != RESPONSE_CODE.RESPONSE_OK:
-            return request._replace(
-                response=Response(ack, FlukeError(
-                    ack,
-                    f"Request {request} failed with {ack}, received {ack_response}"),
-                    ack_response)
-            )
+            raise FlukeError(
+                ack,
+                f"Request {request} failed with {ack}, received {ack_response}",
+                request)
 
         response_payload = io.recv() if len(cls.properties) != 0 else None
         try:
@@ -253,7 +257,7 @@ class QDDA(Query):
                     elif item == "2":
                         yield ('measurementMode', [c(next(ivalues)), c((next(ivalues)))])
                     else:
-                        yield('measurementMode', [c(next(ivalues))])
+                        yield ('measurementMode', [c(next(ivalues))])
 
         def parse_values(ivalues, iconverters):
             for (name, formatter), item in zip(iconverters, ivalues):
@@ -275,12 +279,14 @@ class QDDA(Query):
 class PMM(Query):
     request_format = b"PRESS MINMAX"
 
+
 class PF1(Query):
     request_format = b"PRESS F1"
 
 
 class PF4(Query):
     request_format = b"PRESS F4"
+
 
 class HOLD(Query):
     request_format = b'PRESS HOLD'

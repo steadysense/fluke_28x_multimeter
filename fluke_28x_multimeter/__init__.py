@@ -40,6 +40,11 @@ class Fluke287(object):
         return ret
 
     def send(self, request):
+        """
+
+        :param request:
+        :return:
+        """
         return send(self._io, request)
 
     def recv(self):
