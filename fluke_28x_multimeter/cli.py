@@ -153,7 +153,7 @@ def serve(fluke, serve_type, endpoint):
                     yield fluke.execute(query)
                 except (TimeoutError, SerialException) as e:
                     logger.exception(
-                        "{query} failed. Check if cable is plugged "
+                        f"{query} failed. Check if cable is plugged "
                         "in correctly",
                         exc_info=e)
                     connection_error[query] = True
