@@ -15,7 +15,8 @@ TERMINATOR = b"\r"
 
 commands = ['find', 'connect', 'disconnect', 'settings', 'receive', 'send']
 queries = ['ID', "QDDA", "QM", "PMM", "PF1", "HOLD"]
-constants = ["USB_SERIAL_NUMBER", "TIMEOUT", "ENCODING", "BAUDRATE", "TERMINATOR", "RESPONSE_CODE"]
+constants = ["USB_SERIAL_NUMBER", "TIMEOUT", "ENCODING", "BAUDRATE",
+             "TERMINATOR", "RESPONSE_CODE"]
 
 __all__ = queries + commands + constants
 
@@ -77,7 +78,8 @@ def connect(port=None):
     :return:
     """
     from serial import Serial
-    return Serial(port=port or find(USB_SERIAL_NUMBER), baudrate=BAUDRATE, timeout=TIMEOUT)
+    return Serial(port=port or find(USB_SERIAL_NUMBER), baudrate=BAUDRATE,
+                  timeout=TIMEOUT)
 
 
 def settings(io):
@@ -105,11 +107,11 @@ def receive(io, terminator=TERMINATOR, size=None, timeout=TIMEOUT):
             if buffer[-lenterm:] == terminator:
                 ret = bytes(buffer[:-lenterm])
                 logger.debug(f"<--{ret}")
-                return bytes(buffer[:-lenterm])
+                return ret
             if size is not None and len(buffer) >= size:
                 ret = bytes(buffer)
                 logger.debug(f"<--warning:{ret}")
-                return bytes(buffer)
+                return ret
         if time.monotonic() - start > TIMEOUT:
             raise TimeoutError(
                 f"Timeout exceeded ({timeout}), recieved: {buffer}")
@@ -255,7 +257,8 @@ class QDDA(Query):
                     if item == "0":
                         yield ('measurementMode', [])
                     elif item == "2":
-                        yield ('measurementMode', [c(next(ivalues)), c((next(ivalues)))])
+                        yield ('measurementMode',
+                               [c(next(ivalues)), c((next(ivalues)))])
                     else:
                         yield ('measurementMode', [c(next(ivalues))])
 
